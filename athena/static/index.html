@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Athena | Local Server</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- APP LOGIC (Must be loaded before Alpine) -->
+    <script>
+        function app() {
+            return {
+                activeTab: 'converter',
+                activeSystem: 'roman',
+                systems: [],
+                inputNumber: 10,
+                conversionResult: null,
+                puzzle: {},
+                puzzleGuess: '',
+                feedback: null,
+
+                async init() {
+                    console.log("App Initializing...");
+                    try {
+                        // 1. Fetch available systems from Python Backend
+                        const res = await fetch('/systems');
+                        if (!res.ok) throw new Error("Failed to connect to backend");
+                        this.systems = await res.json();
+                        this.convert(); // Initial convert
+                    } catch (e) {
+                        console.error("Initialization Error:", e);
+                        // Fallback data if backend is offline to prevent white screen
+                        this.systems = [{id: 'roman', name: 'Roman (Offline)', base: 10}];
+                    }
+                },
+
+                async convert() {
+                    if(!this.inputNumber) return;
+                    try {
+                        const res = await fetch('/convert', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({ number: parseInt(this.inputNumber), system_id: this.activeSystem })
+                        });
+                        this.conversionResult = await res.json();
+                    } catch (e) {
+                        console.error("Conversion Error:", e);
+                    }
+                },
+
+                async loadPuzzle() {
+                    this.feedback = null;
+                    this.puzzleGuess = '';
+                    try {
+                        const res = await fetch(`/puzzle/${this.activeSystem}`);
+                        this.puzzle = await res.json();
+                    } catch (e) {
+                        console.error("Puzzle Error:", e);
+                    }
+                },
+
+                checkPuzzle() {
+                    if (parseInt(this.puzzleGuess) === this.puzzle.target) {
+                        this.feedback = "Correct!";
+                    } else {
+                        this.feedback = "Incorrect.";
+                    }
+                },
+
+                getSystemName() {
+                    const s = this.systems.find(x => x.id === this.activeSystem);
+                    return s ? s.name : 'Loading...';
+                }
+            }
+        }
+    </script>
+
+    <!-- Alpine JS for interactivity (Added 'defer') -->
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <!-- Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body class="bg-slate-50 text-slate-900" x-data="app()">
+
+    <!-- Sidebar -->
+    <div class="flex h-screen">
+        <aside class="w-64 bg-slate-900 text-white flex flex-col">
+            <div class="p-6 border-b border-slate-800">
+                <h1 class="text-2xl font-bold text-blue-400">ATHENA</h1>
+                <p class="text-xs text-slate-400">FastAPI Engine Active</p>
+            </div>
+            
+            <nav class="p-4 space-y-2 flex-1">
+                <button @click="activeTab = 'explorer'" :class="{'bg-blue-600': activeTab === 'explorer'}" class="w-full text-left px-4 py-3 rounded hover:bg-slate-800 transition">
+                    Library
+                </button>
+                <button @click="activeTab = 'converter'" :class="{'bg-blue-600': activeTab === 'converter'}" class="w-full text-left px-4 py-3 rounded hover:bg-slate-800 transition">
+                    Transpiler
+                </button>
+                <button @click="activeTab = 'practice'" :class="{'bg-blue-600': activeTab === 'practice'}" class="w-full text-left px-4 py-3 rounded hover:bg-slate-800 transition">
+                    Olympiad Zone
+                </button>
+            </nav>
+
+            <div class="p-4 bg-slate-800">
+                <label class="text-xs uppercase text-slate-500 font-bold">System API Connected</label>
+                <select x-model="activeSystem" @change="loadPuzzle()" class="w-full mt-2 bg-slate-900 border border-slate-700 rounded p-2 text-sm text-white">
+                    <template x-for="sys in systems">
+                        <option :value="sys.id" x-text="sys.name"></option>
+                    </template>
+                </select>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-1 overflow-y-auto p-8">
+            
+            <!-- HEADER -->
+            <header class="mb-8">
+                <h2 class="text-4xl font-serif text-slate-800" x-text="getSystemName()"></h2>
+                <div class="flex gap-4 mt-2 text-sm text-slate-500">
+                    <span class="bg-blue-100 text-blue-800 px-2 py-1 rounded">Connected to localhost:8000</span>
+                </div>
+            </header>
+
+            <!-- TAB: CONVERTER -->
+            <div x-show="activeTab === 'converter'" class="animate-fade-in">
+                <div class="bg-white p-8 rounded-xl shadow border border-slate-200 text-center">
+                    <label class="block text-sm font-bold text-slate-400 uppercase mb-4">Input Arabic Number</label>
+                    <input type="number" x-model="inputNumber" @input.debounce.300ms="convert()" class="text-5xl font-bold text-center w-full border-b-2 border-blue-500 outline-none pb-2 text-slate-800">
+                    
+                    <div class="mt-8 p-6 bg-slate-50 rounded-xl min-h-[100px] flex items-center justify-center">
+                        <div x-show="!conversionResult" class="text-slate-400 italic">Enter a number...</div>
+                        
+                        <!-- Renderer for Results -->
+                        <div x-show="conversionResult">
+                            <div x-show="!conversionResult.is_positional" class="text-6xl font-serif tracking-widest text-slate-800" x-text="conversionResult.result"></div>
+                            
+                            <div x-show="conversionResult.is_positional" class="flex gap-4 justify-center">
+                                <template x-for="(digit, idx) in conversionResult.result">
+                                    <div class="flex flex-col items-center">
+                                        <!-- Mayan Renderer Logic -->
+                                        <div x-show="conversionResult.renderer === 'mayan'" class="border border-slate-400 bg-stone-100 p-2 rounded min-w-[50px] min-h-[60px] flex flex-col items-center justify-center gap-1">
+                                            <div class="flex gap-1">
+                                                <template x-for="i in (digit % 5)">
+                                                    <div class="w-3 h-3 bg-black rounded-full"></div>
+                                                </template>
+                                            </div>
+                                            <div class="flex flex-col gap-1">
+                                                <template x-for="i in Math.floor(digit / 5)">
+                                                    <div class="w-8 h-2 bg-black rounded-sm"></div>
+                                                </template>
+                                            </div>
+                                            <div x-show="digit === 0" class="text-xl">Θ</div>
+                                        </div>
+                                        
+                                        <!-- Fallback Renderer -->
+                                        <div x-show="conversionResult.renderer !== 'mayan'" class="text-3xl font-bold border p-2 rounded bg-white" x-text="digit"></div>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Logic Steps from Backend -->
+                <div class="mt-6 bg-slate-900 text-slate-300 p-6 rounded-xl font-mono text-sm">
+                    <h4 class="text-blue-400 font-bold mb-4">BACKEND LOGIC TRACE</h4>
+                    <ul class="space-y-2">
+                        <template x-for="step in conversionResult.steps">
+                            <li x-text="'> ' + step"></li>
+                        </template>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- TAB: PRACTICE -->
+            <div x-show="activeTab === 'practice'">
+                <div class="bg-white p-8 rounded-xl shadow border-l-4 border-blue-500">
+                    <div class="flex justify-between mb-4">
+                        <span class="text-xs font-bold text-blue-500 uppercase" x-text="puzzle.type + ' PUZZLE'"></span>
+                        <button @click="loadPuzzle()" class="text-sm text-blue-600 hover:underline">New Puzzle</button>
+                    </div>
+                    
+                    <h3 class="text-2xl font-medium text-slate-800 mb-6" x-text="puzzle.question"></h3>
+                    
+                    <div class="flex gap-4">
+                        <input type="text" x-model="puzzleGuess" placeholder="Answer..." class="border p-3 rounded flex-1">
+                        <button @click="checkPuzzle()" class="bg-blue-600 text-white px-6 rounded font-bold">Check</button>
+                    </div>
+                    
+                    <div x-show="feedback" class="mt-4 p-4 rounded" :class="feedback === 'Correct!' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'">
+                        <strong x-text="feedback"></strong>
+                        <span x-show="feedback !== 'Correct!'" x-text="' Hint: ' + puzzle.hint"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB: EXPLORER -->
+            <div x-show="activeTab === 'explorer'">
+                <div class="bg-white p-6 rounded-xl shadow">
+                    <h3 class="text-xl font-bold mb-2">System Details</h3>
+                    <p class="text-slate-600">This data is fetched dynamically from the Python `main.py` backend.</p>
+                    <pre class="bg-slate-100 p-4 mt-4 rounded text-xs overflow-auto" x-text="JSON.stringify(systems.find(s => s.id === activeSystem), null, 2)"></pre>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <script>
+        lucide.createIcons();
+    </script>
+</body>
+</html>
